@@ -15,6 +15,6 @@ A simple Python calculator project.
 python calculator.py
 ```
 
-## Requirments
+## Requirements
 
 - Python 3.x
