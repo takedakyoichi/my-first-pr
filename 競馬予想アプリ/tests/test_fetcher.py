@@ -1,4 +1,3 @@
-from pathlib import Path
 from keiba import fetcher
 
 
@@ -52,6 +51,19 @@ def test_fetch_retries_on_5xx(tmp_path, monkeypatch):
     body = "x".encode("euc-jp")
     sess = FakeSession([FakeResp(b"", 503), FakeResp(body, 200)])
     out = fetcher.fetch("https://example.com/c", session=sess,
-                        sleeper=lambda: None, max_retries=3)
+                        sleeper=lambda: None, backoff_sleep=lambda d: None, max_retries=3)
     assert out == "x"
     assert sess.calls == 2
+
+
+def test_fetch_backoff_exponential(tmp_path, monkeypatch):
+    monkeypatch.setattr(fetcher.config, "CACHE_DIR", tmp_path)
+    body = "y".encode("euc-jp")
+    sess = FakeSession([FakeResp(b"", 503), FakeResp(b"", 503), FakeResp(body, 200)])
+    delays = []
+    out = fetcher.fetch("https://example.com/d", session=sess,
+                        sleeper=lambda: None, backoff_sleep=lambda d: delays.append(d),
+                        max_retries=3)
+    assert out == "y"
+    assert sess.calls == 3
+    assert delays == [1.0, 2.0]

@@ -17,24 +17,25 @@ def cache_path(url: str) -> Path:
     return config.CACHE_DIR / f"{h}.html"
 
 
-def fetch(url, *, encoding="euc-jp", session=None, sleeper=None, max_retries=3) -> str:
+def fetch(url, *, encoding="euc-jp", session=None, sleeper=None, max_retries=3, backoff_sleep=None) -> str:
     path = cache_path(url)
     if path.exists():
         return path.read_bytes().decode(encoding, errors="replace")
 
     sess = session or requests.Session()
     sleeper = sleeper or _default_sleeper
+    backoff_sleep = backoff_sleep or time.sleep
     headers = {"User-Agent": config.USER_AGENT}
 
     delay = 1.0
     last_exc = None
-    for attempt in range(max_retries):
+    for _ in range(max_retries):
         sleeper()  # 取得の前に必ず待つ（礼儀）
         try:
             resp = sess.get(url, headers=headers, timeout=30)
             if resp.status_code in (429, 500, 502, 503, 504):
                 last_exc = RuntimeError(f"status {resp.status_code}")
-                time.sleep(delay)
+                backoff_sleep(delay)
                 delay *= 2
                 continue
             resp.raise_for_status()
@@ -43,6 +44,6 @@ def fetch(url, *, encoding="euc-jp", session=None, sleeper=None, max_retries=3) 
             return resp.content.decode(encoding, errors="replace")
         except requests.RequestException as e:
             last_exc = e
-            time.sleep(delay)
+            backoff_sleep(delay)
             delay *= 2
     raise RuntimeError(f"fetch failed: {url}") from last_exc
