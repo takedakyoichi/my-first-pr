@@ -11,12 +11,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--start", default=config.DATE_START)
     ap.add_argument("--end", default=config.DATE_END)
+    ap.add_argument("--limit", type=int, default=None,
+                    help="Stop after attempting this many races (smoke test before a full run).")
     args = ap.parse_args()
 
     conn = db.connect(config.DB_PATH)
     db.init_schema(conn)
     print(f"collecting {args.start} .. {args.end} -> {config.DB_PATH}")
-    summary = ingest.run(conn, args.start, args.end)
+    summary = ingest.run(conn, args.start, args.end, limit=args.limit, logger=print)
     print("summary:", summary)
 
 

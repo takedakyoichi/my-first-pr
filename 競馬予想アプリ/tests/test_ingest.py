@@ -142,6 +142,82 @@ def test_run_isolates_errors(monkeypatch):
     assert "BADRACEID0001" not in db.processed_race_ids(conn)
 
 
+def test_run_limit_stops_after_n_attempted_races(monkeypatch):
+    conn = make_conn()
+    monkeypatch.setattr(ingest.discovery, "jra_race_dates", lambda s, e: ["20211226"])
+    monkeypatch.setattr(
+        ingest.discovery, "race_ids_for_date",
+        lambda d, fetch=None: ["202112260111", "202112260222", "202112260333", "202112260444"],
+    )
+
+    summary = ingest.run(conn, "2021-12-26", "2021-12-26",
+                         fetch=lambda url, **k: "<html>", parse=fake_parse_full,
+                         limit=2)
+
+    attempted = summary["done"] + summary["empty"] + summary["error"]
+    assert attempted == 2
+    # Not all 4 available races were processed -- the limit stopped iteration early.
+    assert len(db.processed_race_ids(conn)) == 2
+
+
+def test_run_limit_does_not_count_already_skipped_races(monkeypatch):
+    conn = make_conn()
+    monkeypatch.setattr(ingest.discovery, "jra_race_dates", lambda s, e: ["20211226"])
+    monkeypatch.setattr(
+        ingest.discovery, "race_ids_for_date",
+        lambda d, fetch=None: ["202112260111", "202112260222", "202112260333"],
+    )
+
+    # Pre-process the first race so it will be skipped on the next run.
+    ingest.ingest_race(conn, "202112260111", fetch=lambda url, **k: "<html>", parse=fake_parse_full)
+
+    summary = ingest.run(conn, "2021-12-26", "2021-12-26",
+                         fetch=lambda url, **k: "<html>", parse=fake_parse_full,
+                         limit=2)
+
+    # The pre-processed race is skipped (doesn't consume budget), so the
+    # limit still allows 2 NEW races to be attempted.
+    assert summary["skip"] == 1
+    attempted = summary["done"] + summary["empty"] + summary["error"]
+    assert attempted == 2
+
+
+def test_run_logger_receives_one_message_per_date(monkeypatch):
+    conn = make_conn()
+    monkeypatch.setattr(ingest.discovery, "jra_race_dates", lambda s, e: ["20211226", "20211227"])
+
+    def fake_race_ids(d, fetch=None):
+        return ["202112260111"] if d == "20211226" else ["202112270111"]
+
+    monkeypatch.setattr(ingest.discovery, "race_ids_for_date", fake_race_ids)
+
+    captured = []
+    ingest.run(conn, "2021-12-26", "2021-12-27",
+              fetch=lambda url, **k: "<html>", parse=fake_parse_full,
+              logger=lambda m: captured.append(m))
+
+    assert len(captured) == 2
+    assert "20211226" in captured[0]
+    assert "done=1" in captured[0]
+    assert "20211227" in captured[1]
+    # running cumulative tally across dates
+    assert "cum done=2" in captured[1]
+
+
+def test_run_default_logger_produces_no_output(monkeypatch, capsys):
+    conn = make_conn()
+    monkeypatch.setattr(ingest.discovery, "jra_race_dates", lambda s, e: ["20211226"])
+    monkeypatch.setattr(ingest.discovery, "race_ids_for_date",
+                        lambda d, fetch=None: ["202112260111"])
+
+    ingest.run(conn, "2021-12-26", "2021-12-26",
+              fetch=lambda url, **k: "<html>", parse=fake_parse_full)
+
+    out = capsys.readouterr()
+    assert out.out == ""
+    assert out.err == ""
+
+
 def test_ingest_race_marks_error_then_retries():
     conn = make_conn()
     calls = {"n": 0}
