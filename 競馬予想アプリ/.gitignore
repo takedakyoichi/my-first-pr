@@ -1,0 +1,5 @@
+data/cache/
+data/race.db
+__pycache__/
+*.pyc
+.DS_Store
