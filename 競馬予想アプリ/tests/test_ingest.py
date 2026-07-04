@@ -66,6 +66,31 @@ def test_ingest_race_skips_processed():
     assert calls["n"] == 1        # 2回目はfetchしない（再開可能・再取得しない）
 
 
+def test_ingest_race_missing_date_is_empty():
+    conn = make_conn()
+
+    def fake_parse_missing_date(html, race_id):
+        return {
+            "race": {"race_id": race_id, "date": None, "course": None,
+                     "distance": 1600, "surface": "芝", "going": "良",
+                     "race_class": "G1", "num_runners": 2, "weather": "晴"},
+            "entries": [
+                {"horse_id": "h1", "horse_no": 1, "draw": 1, "jockey": "A",
+                 "trainer": "T", "sex_age": "牡3", "weight_carried": 55.0,
+                 "win_odds": 2.1, "popularity": 1, "finish_pos": 1,
+                 "time_sec": 95.0, "last_3f": 33.5, "margin": ""},
+            ],
+            "payouts": [{"bet_type": "win", "combination": "1", "payout": 210,
+                         "popularity": 1}],
+        }
+
+    status = ingest.ingest_race(conn, "202112260111",
+                                fetch=lambda url, **k: "<html>", parse=fake_parse_missing_date)
+    assert status == "empty"
+    n = conn.execute("SELECT COUNT(*) FROM races").fetchone()[0]
+    assert n == 0
+
+
 def test_run_aggregates(monkeypatch):
     conn = make_conn()
     monkeypatch.setattr(ingest.discovery, "jra_race_dates", lambda s, e: ["20211226"])

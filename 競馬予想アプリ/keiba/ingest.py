@@ -8,7 +8,7 @@ def ingest_race(conn, race_id, *, fetch=fetcher.fetch, parse=parser.parse_race_r
         return "skip"
     html = fetch(RESULT_URL.format(race_id=race_id))
     parsed = parse(html, race_id)
-    if not parsed["entries"]:
+    if not parsed["entries"] or not parsed["race"].get("date"):
         db.mark_progress(conn, race_id, "empty")
         return "empty"
     db.upsert_race(conn, parsed["race"])
