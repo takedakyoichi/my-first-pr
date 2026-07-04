@@ -14,15 +14,26 @@ def ingest_race(conn, race_id, *, fetch=fetcher.fetch, parse=parser.parse_race_r
     db.upsert_race(conn, parsed["race"])
     db.upsert_entries(conn, race_id, parsed["entries"])
     db.upsert_payouts(conn, race_id, parsed["payouts"])
+    horses = {}
+    for e in parsed["entries"]:
+        hid = e.get("horse_id")
+        if hid:
+            horses[hid] = {"horse_id": hid, "name": e.get("horse_name")}
+    db.upsert_horses(conn, list(horses.values()))
     db.mark_progress(conn, race_id, "done")
     return "done"
 
 
 def run(conn, date_start, date_end, *, fetch=fetcher.fetch,
         parse=parser.parse_race_result) -> dict:
-    summary = {"done": 0, "empty": 0, "skip": 0}
+    summary = {"done": 0, "empty": 0, "skip": 0, "error": 0}
     for d in discovery.jra_race_dates(date_start, date_end):
         for race_id in discovery.race_ids_for_date(d, fetch=fetch):
-            status = ingest_race(conn, race_id, fetch=fetch, parse=parse)
+            try:
+                status = ingest_race(conn, race_id, fetch=fetch, parse=parse)
+            except Exception:
+                db.mark_progress(conn, race_id, "error")
+                summary["error"] += 1
+                continue
             summary[status] = summary.get(status, 0) + 1
     return summary

@@ -56,15 +56,23 @@ def parse_race_result(html: str, race_id: str) -> dict:
             horse_no = _to_int(tds[2].get_text())
             horse_link = tds[3].select_one("a[href*='/horse/']")
             horse_id = None
+            horse_name = None
             if horse_link:
                 hm = re.search(r"/horse/(\w+)", horse_link.get("href", ""))
                 horse_id = hm.group(1) if hm else None
+                horse_name = horse_link.get_text(strip=True) or None
             sex_age = tds[4].get_text(strip=True)
             weight_carried = _to_float(tds[5].get_text())
             jockey = tds[6].get_text(strip=True)
             time_sec = _time_to_sec(tds[7].get_text())
             margin = tds[8].get_text(strip=True)
             last_3f = _to_float(tds[11].get_text())
+            # STUB / fragile field -- see "Known parser gaps" in HANDOFF.md.
+            # win_odds should be read from the specific 単勝オッズ column by
+            # index (tds[N]) once that column position is confirmed against
+            # real HTML. The scan below grabs the FIRST table cell matching
+            # "\d+\.\d" table-wide, which can accidentally match last_3f
+            # (last-3F time) or another decimal column instead of the odds.
             win_odds = None
             popularity = None
             for td in tds:
@@ -73,13 +81,21 @@ def parse_race_result(html: str, race_id: str) -> dict:
                     win_odds = float(t)
             trainer_link = tr.select_one("a[href*='/trainer/']")
             trainer = trainer_link.get_text(strip=True) if trainer_link else ""
+            # STUB: draw (枠番) is never extracted -- always None. Needs to be
+            # read from the real 枠番 column (tds[N]) once verified against
+            # real HTML. See "Known parser gaps" in HANDOFF.md.
             draw = None
+            # STUB: popularity (人気) is never extracted -- always None above.
+            # Needs to be read from the real 人気 column (tds[N]) once
+            # verified against real HTML. See "Known parser gaps" in
+            # HANDOFF.md.
             entries.append({
                 "horse_id": horse_id, "horse_no": horse_no, "draw": draw,
                 "jockey": jockey, "trainer": trainer, "sex_age": sex_age,
                 "weight_carried": weight_carried, "win_odds": win_odds,
                 "popularity": popularity, "finish_pos": finish_pos,
                 "time_sec": time_sec, "last_3f": last_3f, "margin": margin,
+                "horse_name": horse_name,
             })
 
     # --- 払戻（単勝・ワイド） ---

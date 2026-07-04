@@ -40,7 +40,6 @@ CREATE INDEX IF NOT EXISTS idx_entries_horse ON entries(horse_id);
 
 def connect(db_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
@@ -69,6 +68,13 @@ def upsert_race(conn, race: dict) -> None:
     conn.commit()
 
 
+_ENTRY_COLUMNS = (
+    "horse_id", "horse_no", "draw", "jockey", "trainer", "sex_age",
+    "weight_carried", "win_odds", "popularity", "finish_pos", "time_sec",
+    "last_3f", "margin",
+)
+
+
 def upsert_entries(conn, race_id: str, entries: list[dict]) -> None:
     conn.execute("DELETE FROM entries WHERE race_id=?", (race_id,))
     conn.executemany(
@@ -78,7 +84,23 @@ def upsert_entries(conn, race_id: str, entries: list[dict]) -> None:
            VALUES (:race_id, :horse_id, :horse_no, :draw, :jockey, :trainer, :sex_age,
                    :weight_carried, :win_odds, :popularity, :finish_pos, :time_sec,
                    :last_3f, :margin)""",
-        [{"race_id": race_id, **e} for e in entries],
+        # Select only the columns this INSERT needs -- entry dicts may carry
+        # extra keys (e.g. "horse_name", used only for upsert_horses) that
+        # must not break this named-parameter query.
+        [{"race_id": race_id, **{c: e.get(c) for c in _ENTRY_COLUMNS}} for e in entries],
+    )
+    conn.commit()
+
+
+def upsert_horses(conn, horses: list[dict]) -> None:
+    rows = [h for h in horses if h.get("horse_id")]
+    if not rows:
+        return
+    conn.executemany(
+        """INSERT INTO horses (horse_id, name)
+           VALUES (:horse_id, :name)
+           ON CONFLICT(horse_id) DO UPDATE SET name=excluded.name""",
+        rows,
     )
     conn.commit()
 

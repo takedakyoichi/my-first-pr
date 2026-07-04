@@ -98,6 +98,35 @@ python3 scripts/collect.py --start 2025-01-01 --end 2025-12-31
 
 各実行後に `python3 scripts/db_stats.py` で進捗を確認してください。
 
+## Known parser gaps to implement during local validation
+
+`tests/test_parser.py` only checks that expected **keys are present** in the
+parsed entry dicts — it does NOT check that the values are correct. A green
+`test_parser.py` run therefore does **not** mean these fields are accurate;
+they must be verified against the real saved fixture HTML during Step 2
+above.
+
+- **`draw`（枠番）** — currently hard-coded to `None` in
+  `keiba/parser.py::parse_race_result`. It is never extracted from the table.
+  You must locate the actual 枠番 column index in
+  `tests/fixtures/race_result_sample.html` and read it via `tds[N]`.
+- **`popularity`（人気）** — currently hard-coded to `None` in the same
+  function. You must locate the real 人気 column index and read it via
+  `tds[N]`, the same way `finish_pos`/`horse_no`/etc. are read.
+- **`win_odds`（単勝オッズ）** — uses a fragile heuristic: it scans every
+  `<td>` in the row for the *first* cell matching the regex `\d+\.\d` and
+  takes that as the odds. This can silently grab the wrong column — e.g.
+  `last_3f`（上がり3F タイム）also matches `\d+\.\d` and may appear before
+  the real odds column in the row, corrupting the value. This MUST be
+  replaced with a fixed column index (`tds[N]`) pinned to the confirmed
+  単勝オッズ column, exactly as `finish_pos`, `horse_no`, `jockey`, etc.
+  already are.
+
+Each of the above is marked with a `# STUB` / fragile-field comment directly
+above it in `keiba/parser.py`. Do not treat a passing `test_parser.py` as
+confirmation that these three fields are correct — confirm them by eye
+against the saved fixture HTML first.
+
 ## 礼儀正しさについて
 
 - `keiba/fetcher.py` は取得の都度 2〜4秒のランダムスリープを挟みます。
