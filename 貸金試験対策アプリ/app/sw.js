@@ -1,4 +1,4 @@
-const CACHE = "kashikin-v1";
+const CACHE = "kashikin-v2";
 const SHELL = [
   ".",
   "index.html",
@@ -9,6 +9,8 @@ const SHELL = [
   "js/store.js",
   "js/progress.js",
   "js/srs.js",
+  "js/merge.js",
+  "js/sync.js",
 ];
 
 self.addEventListener("install", (event) => {
@@ -26,8 +28,10 @@ self.addEventListener("activate", (event) => {
 });
 
 // cache-first。取得できた画像/リソースは動的にキャッシュ。
+// ただし /api/ は同期用の動的データなのでキャッシュせずネットワーク直行。
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+  if (new URL(event.request.url).pathname.startsWith("/api/")) return;
   event.respondWith(
     caches.match(event.request).then((hit) => {
       if (hit) return hit;

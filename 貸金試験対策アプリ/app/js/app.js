@@ -4,6 +4,7 @@ import {
 } from "./progress.js";
 import { enterReview, review, duePageIds } from "./srs.js";
 import { flattenPages, renderTOC, showPage, updateHeader } from "./reader.js";
+import { syncOnBoot, pushRemote } from "./sync.js";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
@@ -37,8 +38,11 @@ let state = loadState();
 let current = 0;
 let reviewQueue = [];
 
+let pushTimer = null;
 function persist() {
   saveState(state);
+  if (pushTimer) clearTimeout(pushTimer);
+  pushTimer = setTimeout(() => { pushRemote(state); }, 800);
 }
 
 function refreshHeader() {
@@ -135,6 +139,12 @@ async function boot() {
     manifest = { version: 1, chapters: [] };
   }
   pages = flattenPages(manifest);
+
+  // リモート同期（失敗してもローカルで継続）
+  const { state: synced } = await syncOnBoot(state);
+  state = synced;
+  saveState(state);
+
   renderTOC(els.toc, manifest, state, jump);
   if (pages.length > 0) go(0);
   refreshHeader();
