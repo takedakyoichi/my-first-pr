@@ -1,0 +1,11 @@
+{
+  "name": "貸金 学習リーダー",
+  "short_name": "貸金学習",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#f4f4f5",
+  "theme_color": "#1c1c1e",
+  "icons": [
+    { "src": "pages/sample-001.png", "sizes": "600x800", "type": "image/png" }
+  ]
+}
