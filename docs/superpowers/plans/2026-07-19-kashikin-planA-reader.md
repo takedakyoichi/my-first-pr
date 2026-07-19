@@ -17,7 +17,7 @@
 - 進捗データモデル（localStorage / 後のKV共通）: `{ pages: { [pageId]: { read?, box?, due?, note? } }, activityDates: [ "YYYY-MM-DD" ] }`。
 - manifest 形: `{ version, chapters: [ { id, title, pages: [ { id, image } ] } ] }`。`page.id` は画像ファイル名から決定的（`p-<stem>`）。
 - コミットは必ずパス指定 `git add <path>`。`git add -A` / `git add .` 禁止（ワークスペースに他アプリの埋め込みgitリポジトリが同居）。
-- Python テストは既存 venv で実行: `cd 貸金試験対策アプリ && .venv/bin/python -m pytest`。JS テストは `cd 貸金試験対策アプリ && node --test app/js/tests/`。
+- Python テストは既存 venv で実行: `cd 貸金試験対策アプリ && .venv/bin/python -m pytest`。JS テストは `cd 貸金試験対策アプリ && node --test app/js/tests/*.test.js`（Node のテストランナーはディレクトリ引数を実行対象スクリプトと解釈するため、必ずグロブでファイルを渡す）。
 - 実画像（`app/pages/` の本物のスクショ）は著作物。サンプル以外はコミットしない（`.gitignore` で `app/pages/*` を無視し、サンプルのみ明示追加）。
 
 ---
