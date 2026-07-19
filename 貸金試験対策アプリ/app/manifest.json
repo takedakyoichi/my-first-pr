@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "chapters": [
+    {
+      "id": "ch-uncat",
+      "title": "未分類",
+      "pages": [
+        {
+          "id": "p-sample-001",
+          "image": "pages/sample-001.png"
+        },
+        {
+          "id": "p-sample-002",
+          "image": "pages/sample-002.png"
+        },
+        {
+          "id": "p-sample-003",
+          "image": "pages/sample-003.png"
+        }
+      ]
+    }
+  ]
+}
