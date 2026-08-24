@@ -3,7 +3,36 @@
     "allow": [
       "Bash(until curl *)",
       "Bash(curl -s *)",
-      "Bash(curl -sI *)"
+      "Bash(curl -sI *)",
+      "Bash(grep *)",
+      "Bash(egrep *)",
+      "Bash(rg *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(wc *)",
+      "Bash(sort *)",
+      "Bash(uniq *)",
+      "Bash(cut *)",
+      "Bash(sed -n *)",
+      "Bash(ls *)",
+      "Bash(stat *)",
+      "Bash(date *)",
+      "Bash(ps *)",
+      "Bash(pgrep *)",
+      "Bash(lsof *)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "mcp__claude-in-chrome__read_console_messages",
+      "mcp__claude-in-chrome__read_network_requests",
+      "mcp__claude-in-chrome__list_connected_browsers",
+      "mcp__claude-in-chrome__select_browser",
+      "mcp__claude-in-chrome__resize_window",
+      "mcp__claude-in-chrome__find",
+      "mcp__claude-in-chrome__get_page_text",
+      "mcp__scheduled-tasks__list_scheduled_tasks",
+      "mcp__claude-in-chrome__browser_batch",
+      "mcp__claude-in-chrome__file_upload"
     ]
   }
 }
