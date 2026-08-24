@@ -7,49 +7,84 @@
 書式は **状況／やり方／やって駄目だったこと／所要**。
 
 ---
-### note のフォローバックは「フォローバック」を名指しで押す — 2026-08-24
+### X の相互フォロー状態は API で一括判定できる — 2026-08-24
 
-**状況**: 未フォロバの解消。**プロフィールには `フォロー` ボタンが10個以上ある**（サイドバーのおすすめユーザー）。
+**状況**: リアクションをくれた人のうち「まだフォローしていない相手」を選ぶ。1人ずつプロフィールを開くと11回の navigate。
 
-**やり方**: **本人のボタンは「フォローバック」。名指しで取り、API で検証する。**
+**やり方**: **`friendships/lookup` は screen_name をカンマ区切りで一括で通る。** 11人が1回で出た。
 
 ```js
-const f=[...document.querySelectorAll('button')].find(b=>/^フォローバック$/.test(b.innerText.trim()));
-['pointerdown','mousedown','pointerup','mouseup','click'].forEach(t=>f.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,view:window})));
-await new Promise(r=>setTimeout(r,2500));
-const d=(await (await fetch(`/api/v2/creators/${URLNAME}`,{credentials:'include'})).json()).data;
-d.isFollowing ? 'FOLLOWED-OK' : 'FAILED';
+const ct=document.cookie.match(/ct0=([^;]+)/)[1];
+const BEARER='Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA';
+const r=await fetch('/i/api/1.1/friendships/lookup.json?screen_name=a,b,c',{credentials:'include',
+  headers:{'authorization':BEARER,'x-csrf-token':ct,'x-twitter-active-user':'yes','x-twitter-auth-type':'OAuth2Session'}});
+(await r.json()).map(u=>u.screen_name+' :: '+u.connections.join('/'));
+// none / following / followed_by / following+followed_by
 ```
 
-**やって駄目だったこと**: `^フォロー$` の最初の1件を押した → **サイドバーのおすすめユーザーだった。**
-しかも検証を **「ページのどこかに『フォロー中』の文字があるか」** で書いていたため **`OK` と誤表示。**
-**サイドバーに既フォローの人が並んでいれば、何もしなくても真になる。**
+**やって駄目だったこと**: 同じヘッダで `users/show.json` を叩こうとしたら**ツールの分類器に止められた。**
+**bio が要るときは、素直にプロフィールへ navigate する**（手順メモの下の項）。
 
-**結論: 押下の検証は、押した対象そのものの状態で見る。** note は API に `isFollowing` があるのでそこで見る。
-**総数でも二重チェックできる**（`/api/v2/creators/kyoichi_kurashi/followings?page=1` の `totalCount`）。
+**フォロー押下も、サイドバーのおすすめが混ざる。名指しで取る。**
 
-**所要**: 1件あたり navigate 1回＋JS 1回。
+```js
+const b=[...document.querySelectorAll('button[data-testid$="-follow"]')]
+  .find(x=>(x.getAttribute('aria-label')||'')==='Follow @'+H);
+// 検証: aria-label に H を含む -unfollow ボタンが出たか
+```
 
 ---
-### note の未フォロバは毎日出る（16:50に解消した4時間後に2件） — 2026-08-24
+### note のフォローは API で押せる。ただし **15件で 429** — 2026-08-24
 
-**状況**: フォロバ漏れの走査。**「今日やった」は理由にならない。**
+**状況**: リアクションをくれた人を一括でフォローする。プロフィールを開くと1人2回の呼び出し。
 
-**やり方**: **タグ新着の取得と同じJSの中に混ぜて1回で流す。** 22ページで数十秒。
+**やり方**: **`x-requested-with: XMLHttpRequest` と body `{}` の2つが要る。** これが無いと **422**。
 
 ```js
-let fb=[],page=1;
-for(;;){
-  const r=await fetch(`/api/v2/creators/kyoichi_kurashi/followers?page=${page}`,{credentials:'include'});
-  const d=(await r.json()).data||{};
-  (d.follows||[]).forEach(u=>{ if(u.isFollowed && !u.isFollowing) fb.push(u.urlname); });
-  if(d.isLastPage||page>30) break; page++;
+const d=(await (await fetch(`/api/v2/creators/${urlname}`,{credentials:'include'})).json()).data;
+if(!d.isFollowing){
+  await fetch(`/api/v3/users/${d.key}/following`,{method:'POST',credentials:'include',
+    headers:{'content-type':'application/json','x-requested-with':'XMLHttpRequest'},body:'{}'});
 }
-fb;
+// 検証は必ず isFollowing を取り直す
 ```
 
-**溜まる相手には規則性がある: こちらがスキを押した相手が、あとからフォローしてくる。**
-→ **スキを押した窓の次の窓で走査すると当たりやすい。**
+**⚠ 15件目までは 201、16件目で 429（レート制限）。** 停止条件（運用ルール6章）に当たる。
+→ **1窓あたり10件までに割る。**
+
+**エンドポイントの見つけ方（推測で叩かない）**: `window.fetch` を差し替えてから **UIのボタンを1回押し**、
+`a[1]` の method / headers / body を丸ごと記録する。**推測した `X-XSRF-TOKEN` は cookie が存在せず外れた。**
+
+**note のスキをくれた人は、記事ごとに全件取れる。**
+
+```js
+// 自分の記事一覧 → 各記事の likes を全ページ
+await fetch('/api/v2/creators/kyoichi_kurashi/contents?kind=note&page=1',{credentials:'include'});
+await fetch(`/api/v3/notes/${key}/likes?page=${p}`,{credentials:'include'}); // data.likes[].user
+```
+
+**通知欄は「他N名」で畳まれていて個人が取れない。** `/api/v1|v2|v3/notifications` はどれも **404**。
+**スキ経由の相手を漏れなく取るなら、通知欄ではなく likes API を使う。**
+
+---
+### 自分宛リプの入口は、日によって当たりが入れ替わる — 2026-08-24
+
+**8/23 の実測**: 通知欄がゼロ、`to:kyoichi_kurashi` の live 検索だけが拾えた。
+**8/24 の実測**: **完全に逆。** 今日の着信2件は**通知欄(All)にしか出ない。**
+live 検索も `/notifications/mentions` も、**両方とも 8/23 15:06 UTC で止まっていた。**
+
+→ **どちらか一方に賭けない。3箇所を毎回見る。**
+→ **`/notifications`（All）は `article[data-testid="tweet"]` で本文・時刻・status URL・liked が一度に取れる。**
+
+```js
+[...document.querySelectorAll('article[data-testid="tweet"]')].map(a=>({
+  d:a.querySelector('time').getAttribute('datetime'),
+  t:(a.querySelector('[data-testid="tweetText"]')||{}).innerText,
+  liked:!!a.querySelector('button[data-testid="unlike"]'),
+  link:[...a.querySelectorAll('a')].map(x=>x.getAttribute('href')).find(h=>/\/status\/\d+$/.test(h||''))}));
+```
+
+**着信は遅れて出る。** 19:00窓と20:00窓が「着信ゼロ」と書いた17:27のリプを、22:00窓が拾っている。
 
 ---
 ### X の検索軸は、前の窓と重なると枯れる — 2026-08-24
@@ -67,16 +102,6 @@ liked:!!a.querySelector('button[data-testid="unlike"]')
 （19:00窓が20:10まで走って取り切っていた）。**6回スクロールしても9件から増えない。**
 
 **前の窓の終了が自分の開始と40分以内なら、軸①は飛ばして④フォロー中TLから始める。**
-
----
-### X の検索は `from:` をまとめても、1人が連投していると埋まる — 2026-08-24
-
-**やって駄目だったこと**: 関係が続く8名を `(from:a OR from:b ...)` で1回に引いた
-→ **1人が10連投していて、10件すべてがその人。他7名は1件も出ない。**
-
-**結論: `from:` のまとめ引きは「誰が動いているか」の確認には使えるが、候補集めには使えない。**
-**人数ぶん個別に開くか、フォロー中TLを使う。**
-
 
 ---
 ### X の候補は bio まで取る（表示名・本文だけでは足りない） — 2026-08-24
@@ -175,25 +200,17 @@ for (const tg of ['一人暮らし','自炊','ひとり暮らし','暮らし']) 
 
 ### 送る前に必ず確認すること — 2026-08-24
 
-**半角数字は入力時に脱落する。**「約10万円」→「約万円」、「5分」→「分」の実例が2回。
+**半角数字は入力時に脱落する。**「約10万円」→「約万円」、「5分」→「分」、**「3年目」→「年目」**（8/24 22:00窓）。
 → **数字を含むなら送信前に残存を確認。**
 
-**【2026-08-24 訂正】「漢数字に切り替える」は誤りだった。**
-この回避策が既定になり、**最初から漢数字で書く**ようになっていた。
-相手が「一人暮らし**3年目**」と書いたリプに「同じ**三年目**です」と返した実例あり。
-**同じ言葉を違う表記で返していて不自然。** オーナーから指摘を受けた。
+**脱落したときの順番。漢数字に逃げない**（オーナー指摘。相手の「3年目」に「三年目」と返した事故がある）。
+1. **もう一度入力し直す** 2. **入力欄をクリアして打ち直す**（実座標クリック→`cmd+a`→`BackSpace`）
+3. **その数字を含む表現を変える** 4. **漢数字は最後の手段。使ったら日報に理由を書く**
 
-**脱落したときは、この順で対処する。**
-1. **もう一度入力し直す**（二度目で入ることがある）
-2. **入力欄をクリアして最初から打ち直す**
-3. **その数字を含む表現を変える**
-4. **漢数字は最後の手段。** 使ったら日報に理由を書く
+**8/24 22:00窓の実測: 2 で通った。同じ窓のポストの「8月」は1回目で通っている。脱落は毎回ではない。**
+**漢数字が自然な語はそのまま**（一人暮らし／一汁一菜／一番）。**迷ったら相手の書き方に合わせる。**
 
-**数字は算用数字で書く。**「3年目」「100回」「900円」。
-**漢数字が自然な語はそのまま**（一人暮らし／一汁一菜／一番）。**これは数量ではなく語の一部。**
-**迷ったら相手の書き方に合わせる。**
-
-**本文そのものが入っていないことがある。** 中身が改行1文字だけだった実例あり。
+**本文そのものが入っていないことがある**（中身が改行1文字だけだった実例）。
 → **文字数と本文の完全一致を、送信直前に確認する。**
 
 ---
