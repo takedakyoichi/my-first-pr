@@ -2,196 +2,174 @@
 
 **このファイルは SNS担当 だけが書きます。** 他の社員は読みません。**あなた専用のメモです。**
 
-## 何のためのファイルか
-
-**あなたは毎回まっさらな状態で起動します。** 昨日のあなたが苦労して解いた手順は、
-記録しなければ消えます。**同じことを明日また一から解くことになります。**
-
-実際に起きました（2026-08-24）。noteの一覧がページネーションだと分かるまで、
-スクロールで何度も失敗しました。**次に同じ場所に来たとき、また同じ失敗をします。**
-
-## 書くこと
-
-**一度やって、うまくいったやり方。** 次に同じ場面が来たときに、そのまま使えるもの。
-
-- **動いたコード・セレクタ・APIのエンドポイント**（そのまま貼れる形で）
-- **失敗したやり方と、なぜ駄目だったか**（同じ穴に落ちないため）
-- **何回目で成功したか**（回数が多いものは、ルールに昇格させる価値がある）
-
-## 書かないこと
-
-| その日限りのこと | 日報（`ログ/YYYY-MM-DD.md`）に書く |
-|---|---|
-| 判断基準・方針 | あなたが決めることではない。`改善提案.md` か日報で上げる |
-| 長い説明 | **手順だけ。** 経緯は日報に書く |
-
-## 書き方
-
-新しいものを**上に積んでください。** 古いものほど下になります。
-書式は下の各項目にならう（**状況／やり方／やって駄目だったこと／所要**）。
-
-## 大きくしすぎないこと
-
-**このファイルは毎回あなたが読みます。** 長いと読む時間そのものが負担になります。
-
-**200行を超えたら、古いものから削ってください。**
-**繰り返し使っている手順は `運用ルール.md` に昇格させたほうがよい**ので、
-その候補を `改善提案.md` に書いてください（昇格させるのはメインセッションです）。
+**書くのは手順だけ**（動いたコード・セレクタ・API／駄目だったやり方と理由／何回目で成功したか）。
+経緯は日報、判断基準は `改善提案.md`。**新しいものを上に積む。200行を超えたら古いものから削る。**
+書式は **状況／やり方／やって駄目だったこと／所要**。
 
 ---
-### 公開済み記事の差分は「欠落」と決めつけない — 2026-08-24
+### note のフォローバックは「フォローバック」を名指しで押す — 2026-08-24
 
-**やらかした。** 公開済み記事と下書きを突き合わせて **本文58文字の差分3箇所**を見つけ、
-**「合成pasteの取りこぼし」と診断して1箇所を復元した。**
+**状況**: 未フォロバの解消。**プロフィールには `フォロー` ボタンが10個以上ある**（サイドバーのおすすめユーザー）。
 
-**実際は3箇所ともオーナーが意図的に消したものだった。オーナーの編集を取り消していた。**
+**やり方**: **本人のボタンは「フォローバック」。名指しで取り、API で検証する。**
 
-**差分を見つけたら、こうする。**
+```js
+const f=[...document.querySelectorAll('button')].find(b=>/^フォローバック$/.test(b.innerText.trim()));
+['pointerdown','mousedown','pointerup','mouseup','click'].forEach(t=>f.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,view:window})));
+await new Promise(r=>setTimeout(r,2500));
+const d=(await (await fetch(`/api/v2/creators/${URLNAME}`,{credentials:'include'})).json()).data;
+d.isFollowing ? 'FOLLOWED-OK' : 'FAILED';
+```
 
-1. **まず「オーナーが編集した可能性」を疑う**
-2. **復元しない。差分をそのまま列挙して報告する**
-3. **どちらが正かはオーナーが決める。聞くまで触らない**
+**やって駄目だったこと**: `^フォロー$` の最初の1件を押した → **サイドバーのおすすめユーザーだった。**
+しかも検証を **「ページのどこかに『フォロー中』の文字があるか」** で書いていたため **`OK` と誤表示。**
+**サイドバーに既フォローの人が並んでいれば、何もしなくても真になる。**
 
-**判定の材料**: 段落まるごと・文の末尾がきれいに消えていたら**人の編集の形**。
-技術的な欠落は文字化け・途中で切れる・順序が入れ替わる形になりやすい。**ただし断定はできない。**
+**結論: 押下の検証は、押した対象そのものの状態で見る。** note は API に `isFollowing` があるのでそこで見る。
+**総数でも二重チェックできる**（`/api/v2/creators/kyoichi_kurashi/followings?page=1` の `totalCount`）。
 
-**「下書きが正、公開ページはその複製」という前提が成り立つのは公開直後だけ。**
-**オーナーが読んで直した瞬間に崩れる。公開された記事はオーナーの持ち物。**
+**所要**: 1件あたり navigate 1回＋JS 1回。
 
 ---
+### note の未フォロバは毎日出る（16:50に解消した4時間後に2件） — 2026-08-24
+
+**状況**: フォロバ漏れの走査。**「今日やった」は理由にならない。**
+
+**やり方**: **タグ新着の取得と同じJSの中に混ぜて1回で流す。** 22ページで数十秒。
+
+```js
+let fb=[],page=1;
+for(;;){
+  const r=await fetch(`/api/v2/creators/kyoichi_kurashi/followers?page=${page}`,{credentials:'include'});
+  const d=(await r.json()).data||{};
+  (d.follows||[]).forEach(u=>{ if(u.isFollowed && !u.isFollowing) fb.push(u.urlname); });
+  if(d.isLastPage||page>30) break; page++;
+}
+fb;
+```
+
+**溜まる相手には規則性がある: こちらがスキを押した相手が、あとからフォローしてくる。**
+→ **スキを押した窓の次の窓で走査すると当たりやすい。**
+
+---
+### X の検索軸は、前の窓と重なると枯れる — 2026-08-24
+
+**状況**: いいね候補が集まらない。
+
+**やり方**: **候補取得の時点で `liked`（unlike ボタンの有無）を必ず一緒に取る。**
+既いいねが何割かを見れば、**その軸が枯れているのか自分の判定が厳しいのかを区別できる。**
+
+```js
+liked:!!a.querySelector('button[data-testid="unlike"]')
+```
+
+**実測（20:00窓）**: `一人暮らし 自炊` はユニーク9件中**5件が既にいいね済み**だった
+（19:00窓が20:10まで走って取り切っていた）。**6回スクロールしても9件から増えない。**
+
+**前の窓の終了が自分の開始と40分以内なら、軸①は飛ばして④フォロー中TLから始める。**
+
+---
+### X の検索は `from:` をまとめても、1人が連投していると埋まる — 2026-08-24
+
+**やって駄目だったこと**: 関係が続く8名を `(from:a OR from:b ...)` で1回に引いた
+→ **1人が10連投していて、10件すべてがその人。他7名は1件も出ない。**
+
+**結論: `from:` のまとめ引きは「誰が動いているか」の確認には使えるが、候補集めには使えない。**
+**人数ぶん個別に開くか、フォロー中TLを使う。**
 
 
-### 公開済みnote記事の本文を、下書きと機械照合する — 2026-08-24
+---
+### X の候補は bio まで取る（表示名・本文だけでは足りない） — 2026-08-24
 
-**状況**: 投稿後・更新後の確認。**エディタ側で照合すると嘘の一致が出る**（実際に出た）。
+**状況**: いいね候補の精査。**投稿本文が完全にクリーンでも、bio に旗やアフィ表記があることがある。**
 
-**やり方**: **未ログインで公開APIを取る。** クッキーなし＝読者と同じ見え方。
+**やり方**: プロフィールへ navigate してから1回叩く。
+
+```js
+({bio:((document.querySelector('[data-testid="UserDescription"]')||{}).innerText||''),
+stats:[...document.querySelectorAll('a[href$="/verified_followers"],a[href$="/following"]')].map(a=>a.innerText).join(' | '),
+posts:[...document.querySelectorAll('article[data-testid="tweet"]')].slice(0,5).map(a=>((a.querySelector('[data-testid="tweetText"]')||{}).innerText||'').slice(0,90))})
+```
+
+**そのままプロフィール上で押せる**（検索結果に戻らなくてよい）。
+
+```js
+const a=[...document.querySelectorAll('article[data-testid="tweet"]')].find(x=>/本文の一部/.test((x.querySelector('[data-testid="tweetText"]')||{}).innerText||''));
+const b=a.querySelector('button[data-testid="like"]');
+['pointerdown','mousedown','pointerup','mouseup','click'].forEach(t=>b.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,view:window})));
+await new Promise(r=>setTimeout(r,1500)); a.querySelector('button[data-testid="unlike"]')?'LIKED-OK':'FAILED';
+```
+
+**やって駄目だったこと**
+- `/i/api/1.1/users/lookup.json?screen_name=a,b,c` → **`code:34 that page does not exist`。** 一括取得できない
+- `fetch('/username')` の HTML から og:description → **空。** SPA なので meta が無い
+- `SearchTimeline` の fetch 傍受 → **`__cap` が 0 のまま。** 読み込み後に仕掛けたため（仕掛けてからリロードが要る）
+
+**コスト**: 1件あたり navigate 1回＋JS 1回。**5件で10回。窓は40分に収まった。**
+
+---
+### 窓の冒頭で、当日ログの既出アカウントを一括で取る — 2026-08-24
+
+**状況**: 当日ログが1600行を超えていて、全部読むと窓が終わらない。飛ばすと同じ相手を二度判定する。
+
+**やり方**: **読む前に、これを1回打つ。**
 
 ```bash
-curl -s "https://note.com/api/v3/notes/<KEY>?v=$(date +%s)" -o pub.json
+grep -oE "@[A-Za-z0-9_]+" /Users/kyoichi/Claud用/SNS運用/ログ/$(date +%F).md | sort -u | tr '\n' ' '
 ```
 
-`data` に全部入っている: `body`(HTML) / `price` / `is_limited` / `can_read` /
-`publish_at` / `eyecatch` / `hashtag_notes`。**有料ラインの確認もここでできる。**
+**足切り済みか押し済みかまでは分からないので、当たったハンドルだけ前後を見る。**
 
-照合は **タグを剥がして空白を全部除去 → 文字数とコードポイント総和を比較**。
-`<table-of-contents>` が body に入っていれば目次あり（`o-tableOfContents` は body には無い）。
-
-**やって駄目だったこと**: 8/24 17:18の投稿で「2427字で一致」と書いたが**実際は2331字。**
-**エディタ側の値同士を比べていた。** 58文字が欠けたまま公開されていた。**エディタの値は使わない。**
-
----
-
-### 公開済みnote記事の一部だけを差し替える — 2026-08-24
-
-**状況**: 公開後に訂正が入った。**画像を貼り直さずに本文だけ直したい。**
-
-**やり方**: **置き換えたいブロックの中身を選択して、合成 paste を投げる。**
-
-```js
-window.__replace = async function(node, html){         // node = 対象の<p>/<h2>/<li>内の<p>
-  const ed = document.querySelector('.ProseMirror'); ed.focus();
-  const r = document.createRange(); r.selectNodeContents(node);
-  const s = getSelection(); s.removeAllRanges(); s.addRange(r);
-  await new Promise(f=>setTimeout(f,800));            // ← 待たないと選択を拾い切らない
-  const tmp = document.createElement('div'); tmp.innerHTML = html;
-  const dt = new DataTransfer();
-  dt.setData('text/html', html); dt.setData('text/plain', tmp.innerText);
-  ed.dispatchEvent(new ClipboardEvent('paste',{clipboardData:dt,bubbles:true,cancelable:true}));
-  await new Promise(f=>setTimeout(f,800));
-};
+```bash
+sed -n '817,1250p' ログ/2026-08-24.md | grep -nE "handle1|handle2"
 ```
 
-**段落を1つ増やしたいとき**: 元の段落を**まるごと選択**して、
-`<p>元の内容</p><p>新しい段落</p>` を paste する。
-**先頭ブロックが現在の段落に溶ける性質を、そのまま利用する。** 捨て段落は要らない。
+**やって駄目だったこと**: 817〜1250行を飛ばして窓を始めた。
+**16:00窓が足切り済みの3件を「押す候補」として精査し直し、スキ済みの2件に無駄アクセスした。**
 
-**更新の押し方**: `公開に進む` → `/publish/` へ遷移 → `更新する` を `.click()`。
-**押しても画面は変わらない（遷移しない）。成功したかは公開APIで確かめる。**
-**`publish_at` は更新しても変わらない**（初回公開の時刻のまま）。
+**所要**: 数秒。**飛ばして失う時間のほうがずっと長い。**
 
-**押す前に確認**: `input[name=is_paid]` の `checked`（free のままか）と、
-`svg` を持つ `button` が付与済みタグ（svg 無しはサジェスト）。
-
-**所要**: 5箇所すべて1回。**画面が `document.hidden=true` でも完遂できる。**
 
 ---
+### note のスキは「既に押していないか」を先に見る — 2026-08-24
 
-### note のフォロー一覧・フォロワー一覧を全件取る — 2026-08-24
+**状況**: API に `isLiked` が無いので、記事を開くまで既スキか分からない。
 
-**状況**: フォロバ漏れの走査、フォローの棚卸し。画面のスクロールでは最後まで読めない。
-
-**やり方**: **API を使う。** `isFollowed`（相手→自分）と `isFollowing`（自分→相手）が入っているので、
-判定が機械的にできる。**255件を約30秒で全件取れた。**
+**やり方**: **押す前に取り消しボタンの有無で分岐する。** これ1本で既スキ・成功・失敗を判定できる。
 
 ```js
-// followers / followings のどちらでも同じ形
-const out=[];
-for (let p=1; p<=40; p++) {
-  const r = await fetch(`/api/v2/creators/kyoichi_kurashi/followers?page=${p}`, {credentials:'include'});
-  const d = (await r.json()).data || {};
-  (d.follows||[]).forEach(u => out.push({u:u.urlname, n:u.nickname, f:u.isFollowed, g:u.isFollowing}));
-  if (d.isLastPage) break;
-  await new Promise(s=>setTimeout(s,300));
+const cancel=()=>[...document.querySelectorAll('button')]
+  .some(x=>/スキを取り消す/.test(x.getAttribute('aria-label')||''));
+if(cancel()) ({state:'ALREADY_LIKED'});
+else {
+ const b=[...document.querySelectorAll('button')].find(x=>/^スキ$/.test(x.getAttribute('aria-label')||''));
+ ['pointerdown','mousedown','pointerup','mouseup','click']
+   .forEach(t=>b.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,view:window})));
+ await new Promise(r=>setTimeout(r,1800)); ({state: cancel()?'LIKED-OK':'FAILED'});
 }
-// 未フォロバ = f が true で g が false
 ```
 
-**注意**: `fetch` の結果を関数の戻り値で返すと空になる。**`window.__x` に入れて、次の呼び出しで読む。**
-
-**やって駄目だったこと**: スクロール（無限スクロールではない）／「もっとみる」ボタン（合成イベントが効かない）。
-
-**所要**: 3回目で成功。
+**候補は目標の2倍用意する**（1.5倍では足りなかった）。
 
 ---
+### note のタグ新着を4軸まとめて取る — 2026-08-24
 
-### note のフォロー解除・フォロバをまとめてやる — 2026-08-24
+**状況**: 1軸だと販促で埋まる。`#一人暮らし` 単独は歩留まりが落ち続けている。
 
-**状況**: 一覧ページで複数件を処理する。
-
-**やり方**: **一覧はページネーション。** `?page=N` で直接移動できる。
-各行（`li`）のテキストに **urlname と「フォローされています」の有無**が入っているので、行から判定できる。
-
-**注意**: **解除するとリスト全体が縮み、ページがずれる。** ページ順に進むと取りこぼす。
-→ **処理したら API で取り直して残件を確認する。** 実際、23件処理した時点で取り直したら、
-残り9件が全てページ6に集まっていた（順に進んでいたら見逃していた）。
-
-**所要**: 取り直しをして初めて完了した。
-
----
-
-### X のプロフィールでフォロー解除する（購読を有効にしたアカウント）— 2026-08-24
-
-**状況**: 相手が有料購読を設定していると、ボタンの構造が変わる。
-
-**やり方**: **`aria-label` で選ぶ。`data-testid` は信用しない。**
+**やり方**: **`#自炊` がいちばん良い。** 4軸×2ページで約400件が30秒で取れる。
 
 ```js
-// 通常のアカウント
-const btn = [...document.querySelectorAll('button')]
-  .find(b => /^Following @/.test(b.getAttribute('aria-label')||''));
+for (const tg of ['一人暮らし','自炊','ひとり暮らし','暮らし']) {
+  for (let p=1;p<=2;p++){
+    const r=await fetch(`/api/v3/hashtags/${encodeURIComponent(tg)}/notes?order=new&page=${p}`,{credentials:'include'});
+    const j=await r.json(); ((j.data&&(j.data.notes||j.data.contents))||[]).forEach(n=>{/* n.key n.name n.user.urlname n.price */});
+  }
+}
 ```
 
-**購読有効アカウントでは、本物の解除ボタンは testid が無く、`aria-label="Unfollow @..."` の人型アイコン。**
-**このアイコンは JS のクリックに反応しない**（MouseEvent / PointerEvent / click() すべて無効）。
-→ **スクリーンショットを撮って目視で座標を確認し、一度マウスを離してから実座標でクリックする。**
-ボタンが `Follow back` に変われば成功（確認ダイアログは出ない）。
+**タイトルで足切り → 残りを12件くらいに絞って全文取得**（`/api/v3/notes/{key}` の `body`）。
+**全文を取らないと落とせない記事が、5日連続で出ている。**
 
-**やって駄目だったこと**: `data-testid$="-unfollow"` で選んだら、**それが Subscribe（有料購読の申込）だった。**
-申込ページへ遷移した（支払いはしていない）。**課金に関わるボタンは絶対に押さない。**
-
-**所要**: 4回目で成功。
-
----
-
-### X の入力欄をクリアする — 2026-08-24
-
-**状況**: 打ち直すとき、`cmd+a` → `Delete` が効かず、旧文が残って二重入力になる。
-
-**やり方**: **スクリーンショットを撮り、入力欄の実座標をクリックしてフォーカスを当ててから** `cmd+a` → `BackSpace`。
-**文字数がゼロになったことを JS で確認してから**入力する。
-
-**注意**: JS の `dispatchEvent` + `focus()` は**リプ欄では効くが compose では効かない。**
 
 ---
 
@@ -218,3 +196,7 @@ const btn = [...document.querySelectorAll('button')]
 **本文そのものが入っていないことがある。** 中身が改行1文字だけだった実例あり。
 → **文字数と本文の完全一致を、送信直前に確認する。**
 
+---
+
+**（削除した手順: note の一覧API取得／note の解除・フォロバ／X の購読アカウントの解除／X の入力欄クリア／公開済み記事の差分の扱い／公開済みnote記事の機械照合 → すべて `運用ルール.md` 5章・8章・8.5章にある。
+`status` のIDを推測しない／X の改行は innerText で判定できない → `改善提案.md` に昇格を提案済み）**
