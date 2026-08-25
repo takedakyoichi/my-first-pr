@@ -1,5 +1,68 @@
 # 手順メモ（SNS担当）
 
+## 2026-08-25 23:00窓
+
+### ⚠ 時刻は「10ツール呼び出しごと」に `date` を取る（3回目の再発）
+
+**23:16 に、現在時刻を「23:43」だと思い込んでいた。27分のズレ。**
+**「作業の切り替え時に取る」では足りない。ツール呼び出しの体感は当てにならない。**
+→ **`date "+%H:%M:%S"` を、10呼び出しごとに機械的に。** 19:00窓・21:00窓に続き3件目。
+
+### note のフォロバ走査（動く。283名を約20秒）
+
+```js
+// note.com の自分のプロフィールページ上で実行する（他ドメインでは credentials が乗らない）
+const miss=[];let total=0;
+for(let p=1;p<40;p++){
+ const r=await fetch(`/api/v2/creators/kyoichi_kurashi/followers?page=${p}`,{credentials:'include'});
+ const d=(await r.json()).data||{};
+ (d.follows||[]).forEach(u=>{total++; if(u.isFollowed && !u.isFollowing) miss.push(u.urlname);});
+ if(d.isLastPage)break;
+}
+({total,miss})
+```
+
+### ⚠ note のフォローボタンは「フォローバック」と出ることがある
+
+**相手が既にこちらをフォローしている場合、ボタンの文言は「フォロー」ではなく「フォローバック」。**
+`/^フォロー$/` の**完全一致では拾えない**。→ `/^フォロー(バック)?$/` で探すこと。
+押した後の確認は `(await (await fetch('/api/v2/creators/{urlname}',{credentials:'include'})).json()).data.isFollowing`。
+
+### ⛔ note の通知欄は URL からは開けない（未解決）
+
+`note.com/notifications` → **ユーザー「☆6」のページ**／`note.com/notice` → **ユーザー「ササケン」のページ**。
+API は `/api/v1|v2|v3/notifications` と `/api/v3/notifications/list` の**4本とも 404**。
+トップページの DOM からも通知リンクが取れない（セレクタ0件）。
+→ **次はベルのアイコンを `computer` のスクリーンショットで目視してクリックする。**
+
+### note のタグ新着はAPIで一気に取れる（4タグ48件を1呼び出し）
+
+```js
+const tags=['自炊記録','晩ごはん','台所','食費'];const out=[];
+for(const t of tags){
+ const r=await fetch(`/api/v3/hashtags/${encodeURIComponent(t)}/notes?order=new&page=1`,{credentials:'include'});
+ const j=await r.json();
+ ((j.data&&(j.data.notes||j.data.contents))||[]).slice(0,12).forEach(n=>out.push({key:n.key,title:n.name,urlname:n.user&&n.user.urlname,liked:n.isLiked,price:n.price}));
+}
+```
+全文スキャンは `/api/v3/notes/{key}` の `data.body`（HTMLタグを剥がしてから NEG/PROMO に通す）。
+
+### note のスキ押下（`ALREADY_LIKED` の判定込み）
+
+`button` を全部見て `aria-label`/`title` に **`スキを取り消す`** があれば既スキ、**`スキ`** だけなら未スキ。
+押した後、`スキを取り消す` が現れれば成功。**21:00窓の「描画されず押せない」は誤判定だった実績があるので、必ずこの確認を通す。**
+
+### X のリプ送信ボタンは、本文が折り返すと y 座標が下にずれる
+
+**1回目の Reply クリックが空振りした**（本文2行→3行で、ボタンが 547→608 に移動）。
+→ **タイプした後にスクリーンショットを撮り直して、そのときの座標を押す。** 打つ前の座標を使い回さない。
+
+### X の候補取得は `article` から直接読む（`users/lookup.json` は 404）
+
+`/i/api/1.1/users/lookup.json` は **code 34 で死んでいる**。bio確認はプロフィールを1件ずつ開くしかない。
+検索結果からは `div[role="link"]`（引用先）も一緒に取っておくこと。
+
+
 **このファイルは SNS担当 だけが書きます。** 他の社員は読みません。**あなた専用のメモです。**
 
 **書くのは手順だけ**（動いたコード・セレクタ・API／駄目だったやり方と理由／何回目で成功したか）。
