@@ -1,6 +1,6 @@
 ---
 name: block-cd-compound
-enabled: false
+enabled: true
 event: bash
 action: block
 pattern: (?:^|&&|\|\||;)\s*cd\s+[^&;|]*(?:&&|;)

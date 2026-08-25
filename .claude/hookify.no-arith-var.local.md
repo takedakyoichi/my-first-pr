@@ -1,6 +1,6 @@
 ---
 name: block-arith-with-variable
-enabled: false
+enabled: true
 event: bash
 action: block
 pattern: \$\(\([^)]*[A-Za-z_]
