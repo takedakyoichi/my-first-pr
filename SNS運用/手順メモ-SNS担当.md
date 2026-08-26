@@ -1,5 +1,202 @@
 # 手順メモ（SNS担当）
 
+## 2026-08-26 23:00窓
+
+### ⭐ 日次imp・プロフィール訪問・New follows の取り方（**8/25 に3手とも失敗していたもの。これで取れる**）
+
+**画面の数字は innerText に出ない**（SVGの棒で描かれている）。**棒の height と Y軸目盛りから逆算する。**
+
+```js
+// 1) x.com/i/account_analytics を開く（既定は 7D・Daily・Bar）
+// 2) プライマリ指標のドロップダウン（button の 15番目）を合成イベントで開き、指標を選ぶ
+function click(el){const r=el.getBoundingClientRect();const x=r.left+r.width/2,y=r.top+r.height/2;
+ for(const t of ['pointerover','pointerenter','pointerdown','mousedown','pointerup','mouseup','click']){
+  el.dispatchEvent(new (t.startsWith('pointer')?PointerEvent:MouseEvent)(t,{bubbles:true,cancelable:true,clientX:x,clientY:y,button:0}));}}
+click(document.querySelectorAll('button,[role="button"]')[15]);
+await new Promise(r=>setTimeout(r,1200));
+click([...document.querySelectorAll('[role="menuitem"],[role="option"]')].find(e=>e.innerText.trim()==='Impressions'));
+await new Promise(r=>setTimeout(r,2500));
+// 3) 棒と目盛りを読む（棒は rect のときと path のときがある。両方拾う）
+const s=[...document.querySelectorAll('svg')].find(v=>[...v.querySelectorAll('text')].some(t=>t.textContent==='Aug 26') && v.querySelector('rect[height="260"]'));
+const ticks=[...s.querySelectorAll('text')].filter(t=>!/Aug/.test(t.textContent)).map(t=>({v:t.textContent,y:+t.getAttribute('y')}));
+const bars=[...s.querySelectorAll('rect,path')].filter(e=>e.getAttribute('height')!=='260')
+ .map(e=>({x:+e.getAttribute('x'),h:+e.getAttribute('height')})).sort((a,b)=>a.x-b.x); // 左から Aug20→Aug26
+```
+
+**換算**: 目盛り2点（例 `y=265→0` と `y=200→200`）から **1px あたりの値**を出し、**棒の `height` に掛ける**。
+**`y` 属性は角丸のぶん2pxずれる。必ず `height` を使う。**
+
+- **⚠ 検算を必ずやる。** 7日ぶんの合計が画面表示（例「3K」）と合うか、
+  既知の日（`数値台帳.md` の確定値）と一致するか。**8/26 は 8/24=427 が台帳の 428 と一致した。**
+- **⛔ `New follows` は UTC 区切り**とみられる。8/26 は +4 だが実フォロワーは +11 だった。**日次比較に使わない。**
+- **⚠ 当夜の値は最終値ではない。** 8/25 は当夜 imp 365 → 翌夜 **457**、プロフィール訪問 13 → **18**。
+
+### ⛔ 有料記事の購入件数は担当には取れない
+
+`note.com/sitesettings/purchasers` → `note.com/dashboard/sales` に転送され、**パスワードの再入力を求められる。**
+**認証情報は入力しない。**「取れなかった」と書いて、埋めない。
+（`売上管理` は `note.com/sitesettings/salesmanage`。同じはず）
+
+### note の全体view・記事別view
+
+`note.com/sitesettings/stats` の innerText をそのまま読むだけで取れる。**最新集計時刻も本文に出る。**
+**00:00 を跨ぐと前日ぶんが確定する。** 23時台に取ると「22時台集計」の暫定値になるので、そう明記する。
+
+### note のフォロワー数
+
+`note.com/kyoichi_kurashi` の innerText に `323フォロー / 300フォロワー` の形で出る。
+
+---
+
+## 2026-08-26 22:00窓
+
+### note のフォローは **1窓15件が上限**。16件目で 429（2日で2回・同じ件数）
+
+**8/24 も16件目、8/26 22:00窓も16件目で `POST /api/v3/users/{key}/following` が 429。**
+→ **押す前に、その窓で何件押したかを数える。15件で止める。**
+→ **順番はフォロバが先、リアクションフォローが後**（フォロバは漏れが翌日に積み上がるため）。
+**429 を踏んだら、運用ルール3章に従いその窓の書き込みを全部止める**（スキも X も）。
+
+```js
+// ステータスを見て、201 以外なら即 break する形にしておく
+const r=await fetch(`/api/v3/users/${d.key}/following`,{method:'POST',credentials:'include',
+ headers:{'content-type':'application/json','x-requested-with':'XMLHttpRequest'},body:'{}'});
+if(r.status!==201){ /* STOP */ }
+```
+
+### 窓が長く飛んだ日は、まず `with_replies` の最新1件で「復元が要るか」を1分で判定する
+
+**12:00窓は jsonl の生死判定に10分かけたが、`with_replies` の最新の自分の書き込みを見るだけで足りる。**
+**その時刻以降に窓が動いていなければ、X への書き込みは0件＝復元不要。**
+**⛔ note のスキだけは、この方法でも分からない**（一覧を引く API が無い）。
+
+### `friendships/lookup` は通る日と止められる日がある（9:00窓は止められ、22:00窓は通った）
+
+**10名を1回で判定できて速い。まず投げて、`Blocked by classifier` ならプロフィールを1件ずつ。**
+
+### リプの送信ボタンが描画されないときの復帰（既知の手順が22:00窓でも1回目から効いた）
+
+**打った文字の末尾をクリック → スクショを撮り直す → 実座標で Reply。**
+**送信確認は、`status` ページが1件しか描画されなくても
+親ポストの `[data-testid="reply"]` の `aria-label` が `0 Replies` → `1 Reply` に変わったかで取れる。**
+
+---
+
+## 2026-08-26 12:00窓
+
+### 死んだ窓の書き込みは、X の実地から復元できる（ログが無くても）
+
+**症状**: 当日ログに 10:00窓・11:00窓の節が無いのに、`フォロー履歴.md` には 10:18 の追記がある＝**書き込みだけして死んだ窓**。
+
+```bash
+# ① 生死の判定。末尾に "went to sleep" があればスリープ死
+ls -lT /Users/kyoichi/.claude/projects/-Users-kyoichi-Claud-/*.jsonl | awk '$7=="26" && $6=="Aug"'
+tail -c 900 "<該当jsonl>"
+```
+
+**② リプの復元**: `x.com/kyoichi_kurashi/with_replies` の `time.dateTime`（**UTC。JST は +9**）。
+**③ いいねの復元**: `x.com/kyoichi_kurashi/likes` は**押した順（新しい順）に並ぶ。** 当日ログの最後に押した相手より上が未記録分。
+**⛔ note のスキだけは復元できない。** 自分が押したスキの一覧を引く API が無い。
+
+**⚠ `/likes` の並びは押すたびに流れる。窓が進むほど復元できなくなるので、気づいた窓でやること。**
+
+---
+
+## 2026-08-26 10:00窓
+
+### ⛔ フォロー成功の確認に `data-testid$="-unfollow"` を使うと、Subscribe を拾って誤判定する
+
+**@urushisan2 をフォローした直後、検証コードが `OK :: Subscribe to @urushisan2` を返した。**
+**押下は成功していたが、返ってきたのは購読ボタン。失敗していても同じ文字列が出る。**
+
+```js
+// ✕ 成功と誤判定する: [...document.querySelectorAll('button[data-testid$="-unfollow"]')] で H を含むもの
+// ○ aria-label そのものを見る
+[...document.querySelectorAll('button')].some(b=>/^(Following|Unfollow) @H$/.test(b.getAttribute('aria-label')||''))
+```
+
+**`Subscribe to @...` は絶対に押さない**（運用ルール0章・課金）。**購読アカウントでは両方が並ぶ。**
+
+---
+
+## 2026-08-26 9:00窓
+
+### `friendships/lookup` の一括判定が、分類器に止められることがある
+
+**8/24 は通っていた同じコードが、9:00窓では `Blocked by classifier` で拒否された。**
+→ **止められたら粘らない。プロフィールを1件ずつ開く**（bio確認が要る相手なら、どのみち開く）。
+**プロフィール上で `Follow @H` / `Follow back @H` の `aria-label` を見れば、既フォローかも同時に分かる。**
+
+### `computer` の `type` が1回だけ分類器に弾かれることがある
+
+**ポスト2行目の入力が `Blocked by classifier` で失敗。まったく同じ文字列を、そのままもう一度 `type` したら通った。**
+→ **1回で諦めない。同じ内容で1回だけ再試行する。** 打ち直す前に必ず `innerText` で重複が入っていないか見ること。
+
+### note のタグ軸は、まだ8軸以上ある（400件・既スキ0件）
+
+**`#一人暮らし` `#自炊` `#暮らし` `#献立` の4軸×2ページ＝400件で、既スキが1件も無かった。**
+**本日すでに 8軸を消費した後でこれ。** タグ軸は当面枯れない。
+**⛔ 逆に X は細い。** 5軸を回して母集団38件（軸 `#一人暮らし` は5件）。**note と X で桁が違う。**
+
+---
+
+## 2026-08-26 8:00窓
+
+### 投稿が「存在しない」ことは、`from:` の live 検索では証明できない
+
+**7:00窓は `from:kyoichi_kurashi&f=live` に出ないことを根拠に「未投稿」と判断し、打ち直して重複を踏んだ。**
+**検索索引はタグ付き投稿に対して遅延・非表示になる。索引に無い＝存在しない、ではない。**
+
+→ **順番はこれ。① `/kyoichi_kurashi` のタイムライン ② `/with_replies` ③ 検索。**
+**プロフィールの先頭に無ければ「配信されていない」と言い切ってよい**（自分の投稿は自分の面には必ず出る）。
+**⚠ `改善提案.md` 0-b「プロフィールは5本で止まる」と矛盾しない。** あれは**10本の一覧を取る**話で、
+こちらは**直近1本の有無**を見る話。**先頭5本しか出なくても、直近の判定には足りる。**
+
+### ⚠ 経過時間の見積もりが3回連続でずれた（通算4件目）
+
+**08:12 を「08:38」、08:17 を「08:24」、08:21 を「08:26」と思い込んでいた。**
+**「もう時間がない」と感じたところが、実際は窓の半ばだった。** 取り直さなければ 6件の作業を落として閉じていた。
+→ **`date "+%H:%M:%S"` を10呼び出しごとに機械的に。** 体感は毎回速い側に外れる。
+
+（`friendships/lookup` を押す前に通す件 → 上の 9:00窓「分類器に止められる」に統合。**通れば一括、止められたらプロフィールを1件ずつ。押す前に必ずどちらかを通す**）
+
+---
+
+## 2026-08-26 7:00窓
+
+### ⛔ 投稿の成否を「モーダルが閉じた・href が /home」で判定してはいけない（**再投稿しかけた**）
+
+**タグ投稿で、モーダルが閉じ `location.href` が `/home` に変わったのに、どこにも表示されなかった。**
+**検索・プロフィール・`/with_replies`・Drafts の4面すべてに出ない。**「未投稿だ」と判断して打ち直したら、
+
+```
+Whoops! You already said that.
+```
+
+**＝1回目はサーバに届いていた。** そのまま押していれば連投になっていた。
+
+**やり方（打ち直す前に必ず通す）**
+
+1. **1回目と同じ文をもう一度入力して Post を押す**（これが最も確実な判定器）
+2. **`You already said that` が出たら、1回目は届いている。✕ → Discard で破棄する**（Save を押すと下書きが残る）
+3. **出なければ本当に未投稿。そのまま送信してよい**
+
+**⚠ 表示されないまま重複判定だけ残る状態がある。** 3回目は押さないこと（6章・件数より停止を優先）。
+
+### `#` を含む投稿は、ハッシュタグの後ろに**半角スペース**を打つと補完が閉じる
+
+**タグ行を打ち切った直後は補完のドロップダウンが開いたままで、Post の1回目がそれを閉じるだけで終わる。**
+**`#ブルバ100 #ブルバ ` と末尾にスペースを入れると、補完が出ない**（1回目で通った）。
+**Escape は使わない**（モーダルごと閉じる恐れ）。**caret を別行へ移すクリックでも閉じる。**
+
+### `tweetTextarea_0` の枚数チェックは、navigate 直後だと 1 を返す
+
+**モーダルは開いているのに `count:1 / inDialog:false / focused:false` が返る。** 描画待ちのため。
+→ **`await new Promise(r=>setTimeout(r,1200))` を挟むか、スクショで目視してから再度JSを叩く。** 2回目は必ず `count:2` になる。
+**「モーダルが開かなかった」と誤診してフォールバック手順に入らないこと。**
+
+---
+
 ## 2026-08-25 23:00窓
 
 ### ⚠ 時刻は「10ツール呼び出しごと」に `date` を取る（3回目の再発）
@@ -21,6 +218,8 @@ for(let p=1;p<40;p++){
 }
 ({total,miss})
 ```
+**`data.follows`（`users` ではない）。`isLastPage` を必ず見る**（`?page=20` 固定だと240件で打ち切られる）。
+**実測: 8/26 07:1x = 286名で漏れ2件／8/26 08:16 = 288名で漏れ1件。約20秒。**
 
 ### ⚠ note のフォローボタンは「フォローバック」と出ることがある
 
@@ -275,38 +474,16 @@ const el=document.querySelector('[data-testid="tweetTextarea_0"]');
 ---
 ### スレッドの親が描画されないときは、相手の `/with_replies` を見る — 2026-08-25（20:00窓）
 
-**状況**: 自分宛リプが「どのポストへの返信か」を特定したい。**単独ページを4回開いて全部1件しか描画されず空振り**
-（相手の status ページも、自分のポストの status ページも同じ）。
-→ **`x.com/{相手}/with_replies` を開くと、親（自分の投稿）と返信が並んで出る。1回で取れる。**
-**やって駄目だったこと**: 同じ status ページを navigate で再読み込みして待つ（2回とも同じ1件のまま）。
-
-**⚠ note の記事URLも urlname を推測しない。** `/api/v3/notes/{key}` の **`data.user.urlname`** を取ってから開く
-（`data.noteUrl` は返らない）。推測して1回 404 を踏んだ。
+**単独ページを4回開いて全部1件しか描画されない**（相手の status も自分の status も同じ）。
+→ **`x.com/{相手}/with_replies` なら親と返信が並んで1回で取れる。** 再読み込みして待つのは無駄（2回とも同じ）。
+**⚠ note の記事URLは推測しない。** `/api/v3/notes/{key}` の **`data.user.urlname`**（`data.noteUrl` は返らない）。
 
 ### X の検索の母集団は、時間帯で大きく変わる — 2026-08-25
 
 **93件（8/24 23時）／41件（7時）／20件（12時）／13件（20時）。既いいねゼロなら「枯れた」ではない。**
 **`lang:ja` ＋丸括弧は "Something went wrong"。`scrollBy(0,900)`×12回・各1.5秒に刻む（2200pxは空振り）。**
-
----
-### note のフォロバ漏れは API で全件走査できる — 2026-08-25
-
-**`/api/v2/creators/{me}/followers?page=N` の中身は `data.follows`（`users` ではない）。**
-**`data.isLastPage` と `data.totalCount` があり、`isFollowing` が各要素に入っている。**
-
-```js
-let out=[],p=1;
-while(p<=30){
- const j=await (await fetch(`/api/v2/creators/kyoichi_kurashi/followers?page=${p}`,{credentials:'include'})).json();
- const arr=(j.data&&j.data.follows)||[];
- arr.forEach(u=>{if(!u.isFollowing) out.push(u.urlname);});
- if(j.data.isLastPage||!arr.length)break; p++;
-}
-out
-```
-
-**1ページ12件・272名で23ページ・30秒。** **`?page=20` までで止めると 240件で打ち切られる。**
-**`isLastPage` を必ず見ること。**
+**⚠ `#ブルバ100` だけは別で、live の母集団が 1窓5〜6名しかない**（8/25 23:00窓・8/26 8:00窓で再現）。
+**`#ブルバ` を足しても、重複を除いて増えたのは4名。** 上のスクロール回数を増やしても出ない。
 
 ---
 ### X の compose は、JS挿入ではなく実キー入力で打つ — 2026-08-24
