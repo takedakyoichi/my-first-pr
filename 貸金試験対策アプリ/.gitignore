@@ -1,8 +1,0 @@
-generate/.env
-import/
-__pycache__/
-*.pyc
-.pytest_cache/
-.venv/
-app/pages/*
-!app/pages/sample-*.png

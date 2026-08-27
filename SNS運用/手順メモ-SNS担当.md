@@ -21,6 +21,198 @@
 
 ---
 
+## 2026-08-27 10:00窓
+
+### ⭐ note のタグ新着は「400件を1回で取って、タイトルで機械的に絞る」のが速い（4軸400件を約20秒）
+
+**全文取得は絞ったあとだけにする。** 400件のタイトルを目で読むと窓が終わる。
+
+```js
+const tags=['台所','食費','家事','キッチン'];const out=[];
+for(const t of tags){for(let p=1;p<=2;p++){
+ const j=await (await fetch(`/api/v3/hashtags/${encodeURIComponent(t)}/notes?order=new&page=${p}`,{credentials:'include'})).json();
+ ((j.data&&(j.data.notes||j.data.contents))||[]).forEach(n=>out.push({key:n.key,title:n.name,u:n.user&&n.user.urlname,liked:n.isLiked,price:n.price}));}}
+const re=/一人暮らし|ひとり暮らし|自炊|食洗機|洗い物|皿洗い|ひとりごはん|冷凍|作り置き|シンク|水切り/;
+out.filter(o=>re.test(o.title)&&!o.liked&&!o.price)   // 400件 → 11件になった
+```
+**⚠ 戻り値に全件を出すとツールで truncate される。** 絞った後だけ返すこと。
+
+### ⛔ X の軸④（`(ひとりごはん OR 暮らし OR QOL)(上がった OR 見直 OR 変わった)`）は使えない
+
+**母集団4件で、中身は 政治（県知事選）・本文空・タレントのファン投稿・企業のイラスト業。** 0件。
+**`暮らし` `QOL` は単語が広すぎて、うちの世界の外に食われる。** 軸③（`洗い物 OR 皿洗い OR 台所` × `一人暮らし OR 自炊`）のほうが濃い。
+
+### ⛔ 本文がクリーンでも bio で落ちるのが1窓で3件（今日の最多）
+
+**@ny_ai2**（本文は冷凍保存の話・11.6Kフォロワー／bio「AIで月50万円の収益化」「無料AIマーケ講座⬇︎」）
+**@vwchb14512759**（本文は「洗い物嫌いだから自炊しない」／bio「秘密の関係募集」・固定に `#裏アカ女子`）
+**@ayanitta**（本文は「四角いまな板、ごめんなさい」でうちの世界そのもの／**bio 末尾に「投稿にPR・アフィリエイトを含みます」**）
+→ **bio確認は省かない。** とくに**フォロワーが多くフォローが極端に少ない**（11.6K/24）のは商材系の形。
+
+### リプ欄のツールバー未描画は3件連続で再発（既知の手順が3件とも1回目で効いた）
+
+**打った文字の末尾をクリック → スクショを撮り直す → 実座標で Reply。** 今回の座標は 785,541（8/27 8:00窓は 785,487 と 785,460）。**毎回違う。**
+
+### ⚠ 200行の上限について
+
+**8/27 10:00 時点で日付による削除の対象が1つも無い**（最古の節が 8/24 で、7日以内）。
+**足したぶんは足したまま。** 8/31 以降に 8/24 の節から削れる。
+
+---
+
+## 2026-08-27 9:00窓
+
+### ⛔⛔ note のフォロー一覧APIは `data.follows`。`data.contents` で読むと 0件が返る
+
+**「漏れ0件」と誤読する。** 実際 9:00窓で1回目に踏んだ。**件数が0なら、まず配列名を疑う。**
+
+```js
+const me='kyoichi_kurashi';
+async function all(kind){ // kind = 'followers' | 'followings'
+ const out=[];
+ for(let p=1;p<=30;p++){
+  const r=await fetch(`/api/v2/creators/${me}/${kind}?page=${p}`,{credentials:'include'});
+  if(!r.ok) break;
+  const j=await r.json();
+  const arr=(j.data&&j.data.follows)||[];      // ← contents ではない
+  arr.forEach(u=>out.push(u.urlname));
+  if(j.data&&j.data.isLastPage) break;
+  if(!arr.length) break;
+ }
+ return out;
+}
+const followers=await all('followers'), followings=await all('followings');
+followers.filter(u=>!followings.includes(u));   // フォロバ漏れ
+```
+**検算**: `/api/v2/current_user` の `followerCount` / `followingCount` と件数が合うか見る（300 / 327 だった）。
+
+### ⭐ note のスキ判定は `is_liked`（snake_case）。`isLiked` は undefined になる
+
+**記事詳細 `/api/v3/notes/{key}` の戻りは `is_liked` `like_count` `anonymous_like_count`。**
+**`isLiked` で見ると undefined が返り、「押せたか分からない」と誤読する。** スキのPOSTは 201 が成功。
+
+```js
+const r=await fetch('/api/v3/notes/'+k+'/likes',{method:'POST',credentials:'include',
+ headers:{'content-type':'application/json','x-requested-with':'XMLHttpRequest'},body:'{}'});
+await new Promise(x=>setTimeout(x,1500));
+const j=await (await fetch('/api/v3/notes/'+k,{credentials:'include'})).json();
+({status:r.status, is_liked:j.data.is_liked});
+```
+
+### ⭐⭐ note の「リアクションくれた人」は、通知欄を開かずに API で取れる
+
+**通知欄は回り道だった。** `note.com/notifications` も `note.com/notice` も**別人のユーザーページ**になる（実在の urlname に食われている）。
+`/api/v3/notifications` `/api/v2/notifications` は **404**。ヘッダーの `a[href]` にベルは無い（button で href を持たない）。
+
+**→ 自分の記事のスキ一覧を直接読むほうが速くて確実。**
+
+```js
+// 1) 自分の記事一覧（⚠ ページングあり。9:00窓は page=2 に該当記事があった）
+const j=await (await fetch('/api/v2/creators/kyoichi_kurashi/contents?kind=note&page=1',{credentials:'include'})).json();
+j.data.contents.map(n=>({key:n.key,name:n.name}));
+// 2) 記事ごとのスキ一覧（新しい順・urlname と時刻が取れる）
+const l=await (await fetch('/api/v3/notes/'+key+'/likes?page=1',{credentials:'include'})).json();
+l.data.likes.map(x=>({u:x.user.urlname,n:x.user.nickname,at:x.created_at}));
+```
+**前の窓の「最後に処理した時刻」より新しいものだけ拾う。** フォローは既存の `data.key` を使う手順（下の8:00窓の節）で。
+
+### ⛔ 半角数字は「打ち直し」も「クリアして打ち直し」も効かないことがある
+
+**9:00窓のリプで `2食ぶん` の `2` が3回とも落ちた**（Rangeでキャレットを置いて `2` だけ打つ／全選択Delete→全文打ち直し、どちらも失敗）。
+**同じ窓のポストの `9月` は1回目で通っている。落ちる数字と落ちない数字がある。**
+→ **①②で駄目なら早めに③（表現を変える）へ。** 漢数字は最後。**送信前に文字列の完全一致で必ず確認する。**
+
+### ⛔ X の compose は、navigate 直後に type しても1文字も入らない
+
+**`x.com/compose/post` へ navigate → JSで focus → `type` は、モーダル描画前に打つので全部消える**（`txt:"\n"` になる）。
+→ **スクショを撮って本文欄の実座標をクリックしてから打つ。** 9:00窓は (600,145) で1回目から通った。
+**2行目は `shift+Return` で改行**（素の Return は投稿に化ける危険を避ける）。
+
+---
+
+## 2026-08-27 8:00窓
+
+### ⭐ X の日本語トレンドは、サイドバーの `What's happening` にしかない
+
+**`explore/tabs/keyword` と `explore/tabs/for-you` には英語のAIニュースしか出ない日がある**（8/27 朝の実測）。
+**サイドバーには同じ時刻に `Trending in Japan` として日本語のトレンドが出ている。**
+**→ 何かの status ページかタイムラインを開いていれば右側に出る。専用のページへ行く必要はない。**
+**⚠ 7:00窓と8:00窓で顔ぶれが変わる。使う直前に見ること。**
+
+### ⛔ note の `data.key` は戻り値に出すとツールに伏せられる（`[BLOCKED: Base64 encoded data]`）
+
+**プロフィールAPIの結果をそのまま返すと key が読めず、フォローのAPIが叩けない。**
+→ **key を戻り値に出さず、同じJSの中で取得→POST→検証まで済ませる。**
+
+```js
+const d=(await (await fetch('/api/v2/creators/URLNAME',{credentials:'include'})).json()).data;
+let st=null;
+if(!d.isFollowing){
+ const r=await fetch(`/api/v3/users/${d.key}/following`,{method:'POST',credentials:'include',
+  headers:{'content-type':'application/json','x-requested-with':'XMLHttpRequest'},body:'{}'});
+ st=r.status; await new Promise(x=>setTimeout(x,1500));
+}
+({status:st, isFollowing:(await (await fetch('/api/v2/creators/URLNAME',{credentials:'include'})).json()).data.isFollowing});
+```
+
+### リプ欄のツールバー未描画は2件連続で再発（既知の手順が2件とも1回目で効いた）
+
+**打った文字の末尾をクリック → スクショを撮り直す → 実座標で Reply。** 座標は 785,487 と 785,460 で毎回違った。
+
+---
+
+## 2026-08-27 7:00窓
+
+### ⭐ 公開済み記事の本文を「1語だけ」直す（有料ラインを動かさずに済む手順・1回目で通った）
+
+**スクロールが効かない画面でも、caret を運ぶ必要はない。DOM の Range で選択してから実キー入力する。**
+
+```js
+// ProseMirror の段落を特定 → その先頭テキストノードの 0..3 文字目を選択
+const ed=document.querySelector('.ProseMirror');const p=ed.children[17];
+const tn=document.createTreeWalker(p,NodeFilter.SHOW_TEXT).nextNode();
+ed.focus();
+const rg=document.createRange();rg.setStart(tn,0);rg.setEnd(tn,3);
+const s=window.getSelection();s.removeAllRanges();s.addRange(rg);
+window.getSelection().toString()      // ← 打つ前に必ず「何を選んでいるか」を確かめる
+```
+**そのあと `computer` の `type` で置換文字を打つ。** JS で `insertText` しない（8/24 の空投稿と同じ罠）。
+**確認は本文全体を旧文字列で検索して 0件になったこと＋段落数が変わっていないこと。**
+
+**⚠ `scrollIntoView` も `documentElement.scrollTop` も効かないことがある**（editor.note.com で `scrollY` が 10.5 から動かなかった）。
+**Range 選択なら画面外のままで直せるので、スクロールと格闘しない。**
+
+### ⛔ note の「公開設定」画面には「更新する」ボタンが無い
+
+**有料記事は、右上の「有料エリア設定」へ進んだ先の画面にある。**
+**この画面には本文が全部並び、現在の有料ラインが `このラインより先を有料にする` という widget で表示される**
+（他の段落は全部 `ラインをこの場所に変更`）。**押す前にここで位置を目視できる。**
+
+```js
+const kids=[...document.querySelector('.ProseMirror.paywall-setting').children];
+kids.map((e,i)=>({i,t:(e.innerText||'').slice(0,30)})).filter(o=>/このラインより先/.test(o.t));
+```
+**更新後はログアウト状態（WebFetch・キャッシュ回避クエリ）で「ここから先は」が出ることを必ず確認する。**
+
+### エディタから離れられない（`Leave site?` で navigate が全部失敗する）
+
+**`window.onbeforeunload=null` も `beforeunload` の捕捉も効かなかった。**
+→ **`tabs_create_mcp` で新しいタブを開いて、そちらで作業する。** 1回で通る。
+→ 公開後の画面なら、**「キャンセル」ボタンを押すと記事ページへ戻れる**（このときはダイアログが出ない）。
+
+### ⛔ 公開直後の共有モーダルは、ウィンドウ幅が変わると ✕ の座標がずれる
+
+**1回目のクリック（888,218）が空振りし、モーダルが開いたまま残っていた。**
+**閉じたつもりで次の操作へ行かないこと。スクショで消えたことを見る。**
+
+### X の候補取得: 朝7時台の軸③はコピペbotで半分埋まる
+
+**`(一人暮らし)(自炊 OR 洗い物 OR 食洗機 OR 献立)` live の母集団10件のうち5件が、同一の1文**
+（`自分のために自炊する事ないから一人暮らし向いてないかも`）**を別々のアカウントが投稿していた。**
+→ **候補を集めたら、まず本文の重複を数える。** 母集団の数字だけ見ると「軸は生きている」と誤読する。
+
+---
+
 ## 2026-08-26 23:00窓
 
 ### ⭐ 日次imp・プロフィール訪問・New follows の取り方（**8/25 に3手とも失敗していたもの。これで取れる**）

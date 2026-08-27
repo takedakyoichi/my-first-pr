@@ -1,3 +1,0 @@
-# Python テスト用（build_manifest.py のテスト実行に必要）
-# アプリ本体・build_manifest.py は標準ライブラリのみで動作する
-pytest>=8.0
